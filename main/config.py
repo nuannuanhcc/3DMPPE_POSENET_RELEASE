@@ -20,7 +20,8 @@ class Config:
     cur_dir = osp.dirname(os.path.abspath(__file__))
     root_dir = osp.join(cur_dir, '..')
     data_dir = osp.join(root_dir, 'data')
-    output_dir = osp.join(root_dir, 'output')
+    model_name = 'demo'
+    output_dir = osp.join(root_dir, 'output', model_name)
     model_dir = osp.join(output_dir, 'model_dump')
     vis_dir = osp.join(output_dir, 'vis')
     log_dir = osp.join(output_dir, 'log')
@@ -55,12 +56,23 @@ class Config:
     num_gpus = 1
     continue_train = False
 
-    def set_args(self, gpu_ids, continue_train=False):
+    def set_args(self, model_name, gpu_ids, continue_train=False):
         self.gpu_ids = gpu_ids
         self.num_gpus = len(self.gpu_ids.split(','))
         self.continue_train = continue_train
+        self.model_name = model_name
         os.environ["CUDA_VISIBLE_DEVICES"] = self.gpu_ids
         print('>>> Using GPU: {}'.format(self.gpu_ids))
+
+        self.output_dir = osp.join(self.root_dir, 'output', self.model_name)
+        self.model_dir = osp.join(self.output_dir, 'model_dump')
+        self.vis_dir = osp.join(self.output_dir, 'vis')
+        self.log_dir = osp.join(self.output_dir, 'log')
+        self.result_dir = osp.join(self.output_dir, 'result')
+        make_folder(self.output_dir)
+        make_folder(self.model_dir)
+        make_folder(self.vis_dir)
+        make_folder(self.result_dir)
 
 cfg = Config()
 
@@ -70,8 +82,5 @@ add_pypath(osp.join(cfg.data_dir))
 for i in range(len(cfg.trainset)):
     add_pypath(osp.join(cfg.data_dir, cfg.trainset[i]))
 add_pypath(osp.join(cfg.data_dir, cfg.testset))
-make_folder(cfg.model_dir)
-make_folder(cfg.vis_dir)
-make_folder(cfg.log_dir)
-make_folder(cfg.result_dir)
+
 

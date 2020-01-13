@@ -13,6 +13,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--gpu', type=str, dest='gpu_ids')
     parser.add_argument('--test_epoch', type=str, dest='test_epoch')
+    parser.add_argument('--model_name', type=str, dest='model_name')
     args = parser.parse_args()
 
     # test gpus
@@ -31,7 +32,7 @@ def parse_args():
 def main():
 
     args = parse_args()
-    cfg.set_args(args.gpu_ids)
+    cfg.set_args(args.model_name, args.gpu_ids)
     cudnn.fastest = True
     cudnn.benchmark = True
     cudnn.deterministic = False
