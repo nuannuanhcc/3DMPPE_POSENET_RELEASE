@@ -93,7 +93,7 @@ class Trainer(Base):
         iterator = []
         for i in range(len(cfg.trainset)):
             if i > 0:
-                ref_joints_name = trainset_loader[0].joints_name
+                ref_joints_name = trainset_loader[0].joints_name  # 多个数据集时只使用第一个的joint吗？？
             else:
                 ref_joints_name = None
             trainset_loader.append(DatasetLoader(eval(cfg.trainset[i])("train"), ref_joints_name, True, transforms.Compose([\

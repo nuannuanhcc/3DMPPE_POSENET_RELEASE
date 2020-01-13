@@ -57,11 +57,11 @@ class HeadNet(nn.Module):
                 nn.init.normal_(m.weight, std=0.001)
                 nn.init.constant_(m.bias, 0)
 
-def soft_argmax(heatmaps, joint_num):
+def soft_argmax(heatmaps, joint_num): # [32, 1152, 64, 64]
 
-    heatmaps = heatmaps.reshape((-1, joint_num, cfg.depth_dim*cfg.output_shape[0]*cfg.output_shape[1]))
+    heatmaps = heatmaps.reshape((-1, joint_num, cfg.depth_dim*cfg.output_shape[0]*cfg.output_shape[1])) # [32, 18, 262144]
     heatmaps = F.softmax(heatmaps, 2)
-    heatmaps = heatmaps.reshape((-1, joint_num, cfg.depth_dim, cfg.output_shape[0], cfg.output_shape[1]))
+    heatmaps = heatmaps.reshape((-1, joint_num, cfg.depth_dim, cfg.output_shape[0], cfg.output_shape[1])) # [32, 18, 64, 64, 64]
 
     accu_x = heatmaps.sum(dim=(2,3))
     accu_y = heatmaps.sum(dim=(2,4))
@@ -71,7 +71,7 @@ def soft_argmax(heatmaps, joint_num):
     accu_y = accu_y * torch.cuda.comm.broadcast(torch.arange(1,cfg.output_shape[0]+1).type(torch.cuda.FloatTensor), devices=[accu_y.device.index])[0]
     accu_z = accu_z * torch.cuda.comm.broadcast(torch.arange(1,cfg.depth_dim+1).type(torch.cuda.FloatTensor), devices=[accu_z.device.index])[0]
 
-    accu_x = accu_x.sum(dim=2, keepdim=True) -1
+    accu_x = accu_x.sum(dim=2, keepdim=True) -1 #???为什么要减1
     accu_y = accu_y.sum(dim=2, keepdim=True) -1
     accu_z = accu_z.sum(dim=2, keepdim=True) -1
 
@@ -86,11 +86,11 @@ class ResPoseNet(nn.Module):
         self.head = head
         self.joint_num = joint_num
 
-    def forward(self, input_img, target=None):
-        fm = self.backbone(input_img)
-        hm = self.head(fm)
+    def forward(self, input_img, target=None): # [32, 3, 256, 256]
+        fm = self.backbone(input_img) # [32, 2048, 8, 8]
+        hm = self.head(fm) # [32, 1152, 64, 64]
         coord = soft_argmax(hm, self.joint_num)
-        
+
         if target is None:
             return coord
         else:

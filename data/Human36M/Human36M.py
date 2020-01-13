@@ -123,9 +123,9 @@ class Human36M:
             joint_world = self.add_thorax(joint_world)
             joint_cam = world2cam(joint_world.transpose(1,0), R, t.reshape(3,1)).transpose(1,0)
             joint_img = cam2pixel(joint_cam, f, c)
-            joint_img[:,2] = joint_img[:,2] - joint_cam[self.root_idx,2]
+            joint_img[:,2] = joint_img[:,2] - joint_cam[self.root_idx,2] # 减去root的z
             joint_vis = np.ones((self.joint_num,1))
-            
+
             if self.data_split == 'test' and not cfg.use_gt_info:
                 bbox = bbox_root_result[str(image_id)]['bbox'] # bbox should be aspect ratio preserved-extended. It is done in RootNet.
                 root_cam = bbox_root_result[str(image_id)]['root']
