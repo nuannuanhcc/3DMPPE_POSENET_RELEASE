@@ -3,6 +3,7 @@ from config import cfg
 import torch
 from base import Trainer
 import torch.backends.cudnn as cudnn
+import neptune
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -33,6 +34,14 @@ def main():
     trainer = Trainer()
     trainer._make_batch_generator()
     trainer._make_model()
+
+
+    # neptune
+    neptune.init('hccccccccc/3DMPPE-POSENET', api_token='eyJhcGlfYWRkcmVzcyI6Imh0dHBzOi8vdWkubmVwdHVuZS5tbCIsImFwaV91cmwiOiJodHRwczovL3VpLm5lcHR1bmUuYWkiLCJhcGlfa2V5IjoiNDg2MTAxZTUtZGVlYi00NjUyLWJjOGEtM2FlMGM2MDA1MjYyIn0=')
+    neptune.create_experiment(args.model_name)
+    neptune.append_tag('pose')
+    neptune_step = 0
+
 
     # train
     for epoch in range(trainer.start_epoch, cfg.end_epoch):
@@ -98,6 +107,11 @@ def main():
             trainer.tot_timer.toc()
             trainer.tot_timer.tic()
             trainer.read_timer.tic()
+
+            if itr % 50 == 0:
+                neptune.send_metric('batch_loss', neptune_step, loss.cpu().detach().numpy())
+                neptune.send_metric('lr', neptune_step, trainer.get_lr())
+                neptune_step += 1
 
         trainer.save_model({
             'epoch': epoch,
