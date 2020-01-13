@@ -37,7 +37,7 @@ def main():
 
 
     # neptune
-    neptune.init('hccccccccc/3DMPPE-POSENET', api_token='eyJhcGlfYWRkcmVzcyI6Imh0dHBzOi8vdWkubmVwdHVuZS5tbCIsImFwaV91cmwiOiJodHRwczovL3VpLm5lcHR1bmUuYWkiLCJhcGlfa2V5IjoiNDg2MTAxZTUtZGVlYi00NjUyLWJjOGEtM2FlMGM2MDA1MjYyIn0=')
+    neptune.init('hccccccccc/3DMPPE-POSENET')
     neptune.create_experiment(args.model_name)
     neptune.append_tag('pose')
     neptune_step = 0
