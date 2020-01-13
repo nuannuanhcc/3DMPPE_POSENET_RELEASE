@@ -86,10 +86,35 @@ class ResPoseNet(nn.Module):
         self.head = head
         self.joint_num = joint_num
 
+        self.log_var_head = nn.Sequential()
+        self.log_var_head.add_module('gap', nn.AdaptiveAvgPool2d((1, 1)))
+        self.log_var_head.add_module('bottle_neck',
+                                nn.Sequential(
+                                    nn.Linear(2048, 256, bias=False),
+                                    nn.BatchNorm1d(256),
+                                    nn.ReLU(inplace=True),
+                                    # nn.Dropout(p=0.5),
+
+                                    nn.Linear(256, 64, bias=False),
+                                    nn.BatchNorm1d(64),
+                                    nn.ReLU(inplace=True),
+                                    # nn.Dropout(p=0.5),
+                                ))
+        self.log_var_head.add_module('fc', nn.Linear(64, 18))
+
+        nn.init.constant_(self.log_var_head.fc.weight, 0)
+        nn.init.constant_(self.log_var_head.fc.bias, 0)
+
+
     def forward(self, input_img, target=None): # [32, 3, 256, 256]
         fm = self.backbone(input_img) # [32, 2048, 8, 8]
         hm = self.head(fm) # [32, 1152, 64, 64]
         coord = soft_argmax(hm, self.joint_num)
+
+        x = self.log_var_head.gap(fm)
+        x = x.view(*x.shape[:2])
+        x = self.log_var_head.bottle_neck(x)
+        log_var = self.log_var_head.fc(x)
 
         if target is None:
             return coord
@@ -97,12 +122,14 @@ class ResPoseNet(nn.Module):
             target_coord = target['coord']
             target_vis = target['vis']
             target_have_depth = target['have_depth']
-            
+
             ## coordinate loss
             loss_coord = torch.abs(coord - target_coord) * target_vis
             loss_coord = (loss_coord[:,:,0] + loss_coord[:,:,1] + loss_coord[:,:,2] * target_have_depth)/3.
-            
-            return loss_coord
+            log_var = log_var * target_vis.squeeze(-1)
+            L1_loss = loss_coord
+            loss_all = torch.exp(-log_var) * L1_loss + log_var
+            return loss_coord, loss_all, log_var
 
 def get_pose_net(cfg, is_train, joint_num):
     
