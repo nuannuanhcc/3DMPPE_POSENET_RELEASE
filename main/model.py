@@ -90,17 +90,17 @@ class ResPoseNet(nn.Module):
         self.log_var_head.add_module('gap', nn.AdaptiveAvgPool2d((1, 1)))
         self.log_var_head.add_module('bottle_neck',
                                 nn.Sequential(
-                                    nn.Linear(2048, 256, bias=False),
-                                    nn.BatchNorm1d(256),
+                                    nn.Linear(2048, 512, bias=False),
+                                    nn.BatchNorm1d(512),
                                     nn.ReLU(inplace=True),
                                     # nn.Dropout(p=0.5),
 
-                                    nn.Linear(256, 64, bias=False),
-                                    nn.BatchNorm1d(64),
+                                    nn.Linear(512, 128, bias=False),
+                                    nn.BatchNorm1d(128),
                                     nn.ReLU(inplace=True),
                                     # nn.Dropout(p=0.5),
                                 ))
-        self.log_var_head.add_module('fc', nn.Linear(64, 18))
+        self.log_var_head.add_module('fc', nn.Linear(128, 18*3))
 
         nn.init.constant_(self.log_var_head.fc.weight, 0)
         nn.init.constant_(self.log_var_head.fc.bias, 0)
@@ -114,7 +114,8 @@ class ResPoseNet(nn.Module):
         x = self.log_var_head.gap(fm)
         x = x.view(*x.shape[:2])
         x = self.log_var_head.bottle_neck(x)
-        log_var = self.log_var_head.fc(x)
+        x = self.log_var_head.fc(x)
+        log_var = x.reshape(-1, 18, 3)
 
         if target is None:
             return coord
@@ -124,11 +125,16 @@ class ResPoseNet(nn.Module):
             target_have_depth = target['have_depth']
 
             ## coordinate loss
-            loss_coord = torch.abs(coord - target_coord) * target_vis
-            loss_coord = (loss_coord[:,:,0] + loss_coord[:,:,1] + loss_coord[:,:,2] * target_have_depth)/3.
-            log_var = log_var * target_vis.squeeze(-1)
-            L1_loss = loss_coord
-            loss_all = torch.exp(-log_var) * L1_loss + log_var
+            L1_loss = torch.abs(coord - target_coord) * target_vis  # 32*18*3
+            loss_coord = (L1_loss[:, :, 0] + L1_loss[:, :, 1] + L1_loss[:, :, 2] * target_have_depth) / 3.
+
+            log_var = log_var * target_vis.expand(-1, -1, 3)
+
+            loss_x = torch.exp(-log_var[:, :, 0]) * L1_loss[:, :, 0] + log_var[:, :, 0]
+            loss_y = torch.exp(-log_var[:, :, 1]) * L1_loss[:, :, 1] + log_var[:, :, 1]
+            loss_z = torch.exp(-log_var[:, :, 2]) * L1_loss[:, :, 2] + log_var[:, :, 2]
+
+            loss_all = (loss_x + loss_y + loss_z * target_have_depth) / 3.
             return loss_coord, loss_all, log_var
 
 def get_pose_net(cfg, is_train, joint_num):
