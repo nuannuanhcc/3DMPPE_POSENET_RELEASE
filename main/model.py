@@ -59,11 +59,13 @@ class HeadNet(nn.Module):
                 nn.init.constant_(m.bias, 0)
 
 
-def soft_argmax(heatmaps, joint_num):  # [32, 1152, 64, 64]
+def soft_argmax(heatmaps, joint_num, log_var):  # [32, 1152, 64, 64]
 
     heatmaps = heatmaps.reshape(
         (-1, joint_num, cfg.depth_dim * cfg.output_shape[0] * cfg.output_shape[1]))  # [32, 18, 262144]
-    heatmaps = F.softmax(heatmaps, 2)
+    log_var = torch.exp(log_var.unsqueeze(-1).expand(-1,-1,heatmaps.shape[-1]))
+    var_recip = torch.exp(-log_var)
+    heatmaps = F.softmax(heatmaps * var_recip, 2)
     heatmaps = heatmaps.reshape(
         (-1, joint_num, cfg.depth_dim, cfg.output_shape[0], cfg.output_shape[1]))  # [32, 18, 64, 64, 64]
 
@@ -115,14 +117,14 @@ class ResPoseNet(nn.Module):
 
     def forward(self, input_img, target=None):  # [32, 3, 256, 256]
         fm = self.backbone(input_img)  # [32, 2048, 8, 8]
-        hm = self.head(fm)  # [32, 1152, 64, 64]
-        coord = soft_argmax(hm, self.joint_num)
 
         x = self.log_var_head.gap(fm)
         x = x.view(*x.shape[:2])
         x = self.log_var_head.bottle_neck(x)
         log_var = self.log_var_head.fc(x)
 
+        hm = self.head(fm)  # [32, 1152, 64, 64]
+        coord = soft_argmax(hm, self.joint_num, log_var)
         if target is None:
             return coord
         else:
@@ -133,10 +135,7 @@ class ResPoseNet(nn.Module):
             ## coordinate loss
             loss_coord = torch.abs(coord - target_coord) * target_vis
             loss_coord = (loss_coord[:, :, 0] + loss_coord[:, :, 1] + loss_coord[:, :, 2] * target_have_depth) / 3.
-            log_var = log_var * target_vis.squeeze(-1)
-            L1_loss = loss_coord
-            loss_all = torch.exp(-log_var) * L1_loss + log_var
-            return loss_coord, loss_all, log_var
+            return loss_coord, loss_coord, log_var
 
 
 def get_pose_net(cfg, is_train, joint_num):
