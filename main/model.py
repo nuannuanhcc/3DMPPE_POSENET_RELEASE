@@ -4,6 +4,7 @@ from torch.nn import functional as F
 from nets.resnet import ResNetBackbone
 from config import cfg
 
+
 class HeadNet(nn.Module):
 
     def __init__(self, joint_num):
@@ -57,27 +58,34 @@ class HeadNet(nn.Module):
                 nn.init.normal_(m.weight, std=0.001)
                 nn.init.constant_(m.bias, 0)
 
-def soft_argmax(heatmaps, joint_num): # [32, 1152, 64, 64]
 
-    heatmaps = heatmaps.reshape((-1, joint_num, cfg.depth_dim*cfg.output_shape[0]*cfg.output_shape[1])) # [32, 18, 262144]
+def soft_argmax(heatmaps, joint_num):  # [32, 1152, 64, 64]
+
+    heatmaps = heatmaps.reshape(
+        (-1, joint_num, cfg.depth_dim * cfg.output_shape[0] * cfg.output_shape[1]))  # [32, 18, 262144]
     heatmaps = F.softmax(heatmaps, 2)
-    heatmaps = heatmaps.reshape((-1, joint_num, cfg.depth_dim, cfg.output_shape[0], cfg.output_shape[1])) # [32, 18, 64, 64, 64]
+    heatmaps = heatmaps.reshape(
+        (-1, joint_num, cfg.depth_dim, cfg.output_shape[0], cfg.output_shape[1]))  # [32, 18, 64, 64, 64]
 
-    accu_x = heatmaps.sum(dim=(2,3))
-    accu_y = heatmaps.sum(dim=(2,4))
-    accu_z = heatmaps.sum(dim=(3,4))
+    accu_x = heatmaps.sum(dim=(2, 3))
+    accu_y = heatmaps.sum(dim=(2, 4))
+    accu_z = heatmaps.sum(dim=(3, 4))
 
-    accu_x = accu_x * torch.cuda.comm.broadcast(torch.arange(1,cfg.output_shape[1]+1).type(torch.cuda.FloatTensor), devices=[accu_x.device.index])[0]
-    accu_y = accu_y * torch.cuda.comm.broadcast(torch.arange(1,cfg.output_shape[0]+1).type(torch.cuda.FloatTensor), devices=[accu_y.device.index])[0]
-    accu_z = accu_z * torch.cuda.comm.broadcast(torch.arange(1,cfg.depth_dim+1).type(torch.cuda.FloatTensor), devices=[accu_z.device.index])[0]
+    accu_x = accu_x * torch.cuda.comm.broadcast(torch.arange(1, cfg.output_shape[1] + 1).type(torch.cuda.FloatTensor),
+                                                devices=[accu_x.device.index])[0]
+    accu_y = accu_y * torch.cuda.comm.broadcast(torch.arange(1, cfg.output_shape[0] + 1).type(torch.cuda.FloatTensor),
+                                                devices=[accu_y.device.index])[0]
+    accu_z = accu_z * torch.cuda.comm.broadcast(torch.arange(1, cfg.depth_dim + 1).type(torch.cuda.FloatTensor),
+                                                devices=[accu_z.device.index])[0]
 
-    accu_x = accu_x.sum(dim=2, keepdim=True) -1 #???为什么要减1
-    accu_y = accu_y.sum(dim=2, keepdim=True) -1
-    accu_z = accu_z.sum(dim=2, keepdim=True) -1
+    accu_x = accu_x.sum(dim=2, keepdim=True) - 1  # ???为什么要减1
+    accu_y = accu_y.sum(dim=2, keepdim=True) - 1
+    accu_z = accu_z.sum(dim=2, keepdim=True) - 1
 
     coord_out = torch.cat((accu_x, accu_y, accu_z), dim=2)
 
     return coord_out
+
 
 class ResPoseNet(nn.Module):
     def __init__(self, backbone, head, joint_num):
@@ -89,33 +97,31 @@ class ResPoseNet(nn.Module):
         self.log_var_head = nn.Sequential()
         self.log_var_head.add_module('gap', nn.AdaptiveAvgPool2d((1, 1)))
         self.log_var_head.add_module('bottle_neck',
-                                nn.Sequential(
-                                    nn.Linear(2048, 512, bias=False),
-                                    nn.BatchNorm1d(512),
-                                    nn.ReLU(inplace=True),
-                                    # nn.Dropout(p=0.5),
+                                     nn.Sequential(
+                                         nn.Linear(2048, 256, bias=False),
+                                         nn.BatchNorm1d(256),
+                                         nn.ReLU(inplace=True),
+                                         # nn.Dropout(p=0.5),
 
-                                    nn.Linear(512, 128, bias=False),
-                                    nn.BatchNorm1d(128),
-                                    nn.ReLU(inplace=True),
-                                    # nn.Dropout(p=0.5),
-                                ))
-        self.log_var_head.add_module('fc', nn.Linear(128, 18*3))
+                                         nn.Linear(256, 64, bias=False),
+                                         nn.BatchNorm1d(64),
+                                         nn.ReLU(inplace=True),
+                                         # nn.Dropout(p=0.5),
+                                     ))
+        self.log_var_head.add_module('fc', nn.Linear(64, 18))
 
         nn.init.constant_(self.log_var_head.fc.weight, 0)
         nn.init.constant_(self.log_var_head.fc.bias, 0)
 
-
-    def forward(self, input_img, target=None): # [32, 3, 256, 256]
-        fm = self.backbone(input_img) # [32, 2048, 8, 8]
-        hm = self.head(fm) # [32, 1152, 64, 64]
+    def forward(self, input_img, target=None):  # [32, 3, 256, 256]
+        fm = self.backbone(input_img)  # [32, 2048, 8, 8]
+        hm = self.head(fm)  # [32, 1152, 64, 64]
         coord = soft_argmax(hm, self.joint_num)
 
         x = self.log_var_head.gap(fm)
         x = x.view(*x.shape[:2])
         x = self.log_var_head.bottle_neck(x)
-        x = self.log_var_head.fc(x)
-        log_var = x.reshape(-1, 18, 3)
+        log_var = self.log_var_head.fc(x)
 
         if target is None:
             return coord
@@ -125,20 +131,15 @@ class ResPoseNet(nn.Module):
             target_have_depth = target['have_depth']
 
             ## coordinate loss
-            L1_loss = torch.abs(coord - target_coord) * target_vis  # 32*18*3
-            loss_coord = (L1_loss[:, :, 0] + L1_loss[:, :, 1] + L1_loss[:, :, 2] * target_have_depth) / 3.
-
-            log_var = log_var * target_vis.expand(-1, -1, 3)
-
-            loss_x = torch.exp(-log_var[:, :, 0]) * L1_loss[:, :, 0] + log_var[:, :, 0]
-            loss_y = torch.exp(-log_var[:, :, 1]) * L1_loss[:, :, 1] + log_var[:, :, 1]
-            loss_z = torch.exp(-log_var[:, :, 2]) * L1_loss[:, :, 2] + log_var[:, :, 2]
-
-            loss_all = (loss_x + loss_y + loss_z * target_have_depth) / 3.
+            loss_coord = torch.abs(coord - target_coord) * target_vis
+            loss_coord = (loss_coord[:, :, 0] + loss_coord[:, :, 1] + loss_coord[:, :, 2] * target_have_depth) / 3.
+            log_var = log_var * target_vis.squeeze(-1)
+            L1_loss = loss_coord
+            loss_all = torch.exp(-log_var) * L1_loss + log_var
             return loss_coord, loss_all, log_var
 
+
 def get_pose_net(cfg, is_train, joint_num):
-    
     backbone = ResNetBackbone(cfg.resnet_type)
     head_net = HeadNet(joint_num)
     if is_train:
