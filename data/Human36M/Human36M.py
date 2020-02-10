@@ -8,7 +8,7 @@ import cv2
 import random
 import json
 from utils.vis import vis_keypoints, vis_3d_skeleton
-
+import neptune
 class Human36M:
     def __init__(self, data_split):
         self.data_split = data_split
@@ -147,7 +147,7 @@ class Human36M:
            
         return data
 
-    def evaluate(self, preds, result_dir):
+    def evaluate(self, preds, result_dir, global_steps):
         
         print('Evaluation start...')
         gts = self.data
@@ -212,12 +212,16 @@ class Human36M:
         tot_err = np.mean(error)
         metric = 'PA MPJPE' if self.protocol == 1 else 'MPJPE'
         eval_summary = 'Protocol ' + str(self.protocol) + ' error (' + metric + ') >> tot: %.2f\n' % (tot_err)
-
+        if global_steps:
+            neptune_step = global_steps['valid_global_steps']
+            neptune.send_metric('total_error', neptune_step, tot_err)
+            global_steps['valid_global_steps'] = neptune_step + 1
         # error for each action
         for i in range(len(error_action)):
             err = np.mean(np.array(error_action[i]))
             eval_summary += (self.action_name[i] + ': %.2f ' % err)
-           
+            if global_steps:
+                neptune.send_metric(self.action_name[i], neptune_step, err)
         print(eval_summary)
 
         # prediction save

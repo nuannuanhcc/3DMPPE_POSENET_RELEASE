@@ -1,15 +1,20 @@
 import argparse
 from config import cfg
 import torch
-from base import Trainer
+from base import Trainer, Tester
 import torch.backends.cudnn as cudnn
 import neptune
+from utils.pose_utils import flip
+import numpy as np
+import cv2
+from tqdm import tqdm
 
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--gpu', type=str, dest='gpu_ids')
     parser.add_argument('--continue', dest='continue_train', action='store_true')
     parser.add_argument('--model_name', type=str, dest='model_name')
+    parser.add_argument('--neptune', dest='neptune_use', action='store_true')
     args = parser.parse_args()
 
     if not args.gpu_ids:
@@ -23,6 +28,34 @@ def parse_args():
 
     return args
 
+def valid(trainer, valider, global_steps):
+    preds = []
+    trainer.model.eval()
+    with torch.no_grad():
+        for itr, input_img in enumerate(tqdm(valider.batch_generator)):
+
+            # forward
+            coord_out = trainer.model(input_img)
+
+            if cfg.flip_test:
+                flipped_input_img = flip(input_img, dims=3)
+                flipped_coord_out = trainer.model(flipped_input_img)
+                flipped_coord_out[:, :, 0] = cfg.output_shape[1] - flipped_coord_out[:, :, 0] - 1
+                for pair in valider.flip_pairs:
+                    flipped_coord_out[:, pair[0], :], flipped_coord_out[:, pair[1], :] = flipped_coord_out[:,
+                                                                                         pair[1],
+                                                                                         :].clone(), flipped_coord_out[
+                                                                                                     :, pair[0],
+                                                                                                     :].clone()
+                coord_out = (coord_out + flipped_coord_out) / 2.
+
+            coord_out = coord_out.cpu().numpy()
+            preds.append(coord_out)
+
+    # evaluate
+    preds = np.concatenate(preds, axis=0)
+    valider._evaluate(preds, cfg.result_dir, global_steps)
+
 def main():
     
     # argument parse and create log
@@ -35,17 +68,25 @@ def main():
     trainer._make_batch_generator()
     trainer._make_model()
 
+    valider = Tester(100)
+    valider._make_batch_generator()
 
     # neptune
-    neptune.init('hccccccccc/3DMPPE-POSENET')
-    neptune.create_experiment(args.model_name)
-    neptune.append_tag('pose')
-    neptune_step = 0
+    global_steps = None
+    if args.neptune_use:
+        neptune.init('hccccccccc/3DMPPE-POSENET')
+        neptune.create_experiment(args.model_name)
+        neptune.append_tag('pose')
+        global_steps = {
+            'train_global_steps': 0,
+            'valid_global_steps': 0,
+        }
 
 
     # train
     for epoch in range(trainer.start_epoch, cfg.end_epoch):
-        
+
+        trainer.model.train()
         trainer.set_lr(epoch)
         trainer.tot_timer.tic()
         trainer.read_timer.tic()
@@ -114,19 +155,21 @@ def main():
             trainer.tot_timer.tic()
             trainer.read_timer.tic()
 
-            if itr % 50 == 0:
+            if args.neptune_use and itr % 50 == 0:
+                neptune_step = global_steps['train_global_steps']
                 neptune.send_metric('batch_loss', neptune_step, loss_coord.cpu().detach().numpy())
                 neptune.send_metric('batch_loss_all', neptune_step, loss_all.cpu().detach().numpy())
                 neptune.send_metric('var', neptune_step, var.cpu().detach().numpy())
                 neptune.send_metric('lr', neptune_step, trainer.get_lr())
-                neptune_step += 1
+                global_steps['train_global_steps'] = neptune_step + 1
 
         trainer.save_model({
             'epoch': epoch,
             'network': trainer.model.state_dict(),
             'optimizer': trainer.optimizer.state_dict(),
         }, epoch)
-        
+
+        valid(trainer, valider, global_steps)
 
 if __name__ == "__main__":
     main()
