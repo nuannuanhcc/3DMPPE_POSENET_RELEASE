@@ -170,6 +170,7 @@ def main():
         }, epoch)
 
         valid(trainer, valider, global_steps)
-
+    neptune.stop()
+    
 if __name__ == "__main__":
     main()
