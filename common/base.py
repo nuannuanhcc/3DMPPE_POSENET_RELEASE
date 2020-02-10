@@ -162,6 +162,6 @@ class Tester(Base):
 
         self.model = model
 
-    def _evaluate(self, preds, result_save_path):
-        self.testset.evaluate(preds, result_save_path)
+    def _evaluate(self, preds, result_save_path, global_steps=None):
+        self.testset.evaluate(preds, result_save_path, global_steps)
 
