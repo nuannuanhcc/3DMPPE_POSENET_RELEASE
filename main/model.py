@@ -143,7 +143,7 @@ class ResPoseNet(nn.Module):
             preds[:, :, 2] = (preds[:, :, 2]) % cfg.depth_dim
             preds[:, :, 0] = (preds[:, :, 0]) / cfg.depth_dim % cfg.output_shape[1]
             preds[:, :, 1] = (preds[:, :, 1]) / cfg.depth_dim / cfg.output_shape[1]
-            dis = torch.abs(preds - target_coord) * target_vis
+            dis = torch.abs(preds.type(torch.cuda.FloatTensor) - target_coord) * target_vis
             dis = torch.mean(dis, -1)  # [32, 18]
             mask = dis > thresh
 

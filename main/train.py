@@ -128,6 +128,10 @@ def main():
             
             # forward
             loss_coord, loss_all, scale, loss_easy, loss_hard = trainer.model(input_img, target)
+            loss_coord = loss_coord.mean()
+            loss_all = loss_all.mean()
+            loss_easy = loss_easy.mean()
+            loss_hard = loss_hard.mean()
             var = scale.mean()
 
 
