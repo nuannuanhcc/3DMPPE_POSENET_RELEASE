@@ -155,7 +155,7 @@ def main():
             trainer.tot_timer.tic()
             trainer.read_timer.tic()
 
-            if args.neptune_use and itr % 50 == 0:
+            if args.neptune_use and itr % 100 == 0:
                 neptune_step = global_steps['train_global_steps']
                 neptune.send_metric('batch_loss', neptune_step, loss_coord.cpu().detach().numpy())
                 neptune.send_metric('batch_loss_all', neptune_step, loss_all.cpu().detach().numpy())

@@ -63,7 +63,7 @@ def soft_argmax(heatmaps, joint_num, log_var):  # [32, 1152, 64, 64]
 
     heatmaps = heatmaps.reshape(
         (-1, joint_num, cfg.depth_dim * cfg.output_shape[0] * cfg.output_shape[1]))  # [32, 18, 262144]
-    log_var = torch.exp(log_var.unsqueeze(-1).expand(-1,-1,heatmaps.shape[-1]))
+    log_var = log_var.unsqueeze(-1).expand(-1,-1,heatmaps.shape[-1])
     var_recip = torch.exp(-log_var)
     heatmaps = F.softmax(heatmaps * var_recip, 2)
     heatmaps = heatmaps.reshape(
