@@ -59,13 +59,12 @@ class HeadNet(nn.Module):
                 nn.init.constant_(m.bias, 0)
 
 
-def soft_argmax(heatmaps, joint_num, log_var):  # [32, 1152, 64, 64]
+def soft_argmax(heatmaps, joint_num, scale):  # [32, 1152, 64, 64]
 
     heatmaps = heatmaps.reshape(
         (-1, joint_num, cfg.depth_dim * cfg.output_shape[0] * cfg.output_shape[1]))  # [32, 18, 262144]
-    log_var = log_var.unsqueeze(-1).expand(-1,-1,heatmaps.shape[-1])
-    var_recip = torch.exp(-log_var)
-    heatmaps = F.softmax(heatmaps * var_recip, 2)
+    scale = scale.unsqueeze(-1).expand(-1,-1,heatmaps.shape[-1])
+    heatmaps = F.softmax(heatmaps * scale, 2)
     heatmaps = heatmaps.reshape(
         (-1, joint_num, cfg.depth_dim, cfg.output_shape[0], cfg.output_shape[1]))  # [32, 18, 64, 64, 64]
 
@@ -121,10 +120,10 @@ class ResPoseNet(nn.Module):
         x = self.log_var_head.gap(fm)
         x = x.view(*x.shape[:2])
         x = self.log_var_head.bottle_neck(x)
-        log_var = self.log_var_head.fc(x)
+        scale = self.log_var_head.fc(x)
 
         hm = self.head(fm)  # [32, 1152, 64, 64]
-        coord = soft_argmax(hm, self.joint_num, log_var)
+        coord = soft_argmax(hm, self.joint_num, scale)
         if target is None:
             return coord
         else:
@@ -132,10 +131,30 @@ class ResPoseNet(nn.Module):
             target_vis = target['vis']
             target_have_depth = target['have_depth']
 
+            s_max = 10
+            s_min = 1
+            thresh = 2
+            lamda = 0.1
+
+            heatmaps = hm.reshape(
+                (-1, self.joint_num, cfg.depth_dim * cfg.output_shape[0] * cfg.output_shape[1]))  # [32, 18, 262144]
+            idx = torch.argmax(heatmaps, dim=2, keepdim=True)
+            preds = idx.repeat(1, 1, 3)
+            preds[:, :, 2] = (preds[:, :, 2]) % cfg.depth_dim
+            preds[:, :, 0] = (preds[:, :, 0]) / cfg.depth_dim % cfg.output_shape[1]
+            preds[:, :, 1] = (preds[:, :, 1]) / cfg.depth_dim / cfg.output_shape[1]
+            dis = torch.abs(preds - target_coord) * target_vis
+            dis = torch.mean(dis, -1)  # [32, 18]
+            mask = dis > thresh
+
+            loss_easy = torch.clamp_min(s_max-scale[~mask], 0)
+            loss_hard = torch.clamp_min(scale[mask]-s_min, 0)
+
             ## coordinate loss
             loss_coord = torch.abs(coord - target_coord) * target_vis
             loss_coord = (loss_coord[:, :, 0] + loss_coord[:, :, 1] + loss_coord[:, :, 2] * target_have_depth) / 3.
-            return loss_coord, loss_coord, log_var
+            loss = loss_coord.mean() + lamda * (loss_easy.mean() + loss_hard.mean())
+            return loss_coord.mean(), loss, scale, loss_easy.mean(), loss_hard.mean()
 
 
 def get_pose_net(cfg, is_train, joint_num):

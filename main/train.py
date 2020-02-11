@@ -127,11 +127,8 @@ def main():
             trainer.optimizer.zero_grad()
             
             # forward
-            loss_coord, loss_all, log_var = trainer.model(input_img, target)
-            loss_coord = loss_coord.mean()
-            loss_all = loss_all.mean()
-            var = torch.exp(log_var.reshape(-1) / 2)
-            var = var.mean()
+            loss_coord, loss_all, scale, loss_easy, loss_hard = trainer.model(input_img, target)
+            var = scale.mean()
 
 
             # backward
@@ -148,6 +145,8 @@ def main():
                 '%.2fh/epoch' % (trainer.tot_timer.average_time / 3600. * trainer.itr_per_epoch),
                 '%s: %.4f' % ('loss_coord', loss_coord.detach()),
                 '%s: %.4f' % ('loss_all', loss_all.detach()),
+                '%s: %.4f' % ('loss_easy', loss_easy.detach()),
+                '%s: %.4f' % ('loss_hard', loss_hard.detach()),
                 '%s: %.4f' % ('var', var.detach()),
                 ]
             trainer.logger.info(' '.join(screen))
@@ -159,6 +158,8 @@ def main():
                 neptune_step = global_steps['train_global_steps']
                 neptune.send_metric('batch_loss', neptune_step, loss_coord.cpu().detach().numpy())
                 neptune.send_metric('batch_loss_all', neptune_step, loss_all.cpu().detach().numpy())
+                neptune.send_metric('batch_loss_easy', neptune_step, loss_easy.cpu().detach().numpy())
+                neptune.send_metric('batch_loss_hard', neptune_step, loss_hard.cpu().detach().numpy())
                 neptune.send_metric('var', neptune_step, var.cpu().detach().numpy())
                 neptune.send_metric('lr', neptune_step, trainer.get_lr())
                 global_steps['train_global_steps'] = neptune_step + 1
