@@ -64,6 +64,7 @@ def soft_argmax(heatmaps, joint_num, scale):  # [32, 1152, 64, 64]
     heatmaps = heatmaps.reshape(
         (-1, joint_num, cfg.depth_dim * cfg.output_shape[0] * cfg.output_shape[1]))  # [32, 18, 262144]
     scale = scale.unsqueeze(-1).expand(-1,-1,heatmaps.shape[-1])
+    scale = torch.clamp(scale, min=1, max=10)
     heatmaps = F.softmax(heatmaps * scale, 2)
     heatmaps = heatmaps.reshape(
         (-1, joint_num, cfg.depth_dim, cfg.output_shape[0], cfg.output_shape[1]))  # [32, 18, 64, 64, 64]
@@ -147,8 +148,8 @@ class ResPoseNet(nn.Module):
             dis = torch.mean(dis, -1)  # [32, 18]
             mask = dis > thresh
 
-            loss_easy = torch.clamp_min(s_max-scale[~mask], 0)
-            loss_hard = torch.clamp_min(scale[mask]-s_min, 0)
+            loss_easy = torch.clamp(s_max-scale[~mask], min=0)
+            loss_hard = torch.clamp(scale[mask]-s_min, min=0)
 
             ## coordinate loss
             loss_coord = torch.abs(coord - target_coord) * target_vis
