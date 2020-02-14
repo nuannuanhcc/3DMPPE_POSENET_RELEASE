@@ -136,9 +136,9 @@ class ResPoseNet(nn.Module):
                 (-1, self.joint_num, cfg.depth_dim * cfg.output_shape[0] * cfg.output_shape[1]))  # [32, 18, 262144]
             idx = torch.argmax(heatmaps, dim=2, keepdim=True)
             preds = idx.repeat(1, 1, 3)
-            preds[:, :, 2] = (preds[:, :, 2]) % cfg.depth_dim
-            preds[:, :, 0] = (preds[:, :, 0]) / cfg.depth_dim % cfg.output_shape[1]
-            preds[:, :, 1] = (preds[:, :, 1]) / cfg.depth_dim / cfg.output_shape[1]
+            preds[:, :, 0] = (preds[:, :, 0]) % cfg.depth_dim
+            preds[:, :, 1] = (preds[:, :, 1]) / cfg.depth_dim % cfg.output_shape[1]
+            preds[:, :, 2] = (preds[:, :, 2]) / cfg.depth_dim / cfg.output_shape[1]
             dis = torch.abs(preds.type(torch.cuda.FloatTensor) - target_coord) * target_vis
             dis = torch.mean(dis, -1)  # [32, 18]
             mask = dis > thresh
