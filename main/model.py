@@ -144,12 +144,12 @@ class ResPoseNet(nn.Module):
             mask = dis > thresh
 
             loss_norm = torch.where(mask, torch.clamp(scale-s_min, min=0), torch.clamp(s_max-scale, min=0))
-
+            loss_norm = loss_norm * target_vis.squeeze(-1)
             ## coordinate loss
             loss_coord = torch.abs(coord - target_coord) * target_vis
             loss_coord = (loss_coord[:, :, 0] + loss_coord[:, :, 1] + loss_coord[:, :, 2] * target_have_depth) / 3.
-            loss = loss_coord.mean() + lamda * loss_norm.mean()
-            return loss_coord.mean(), loss, scale, loss_norm.mean()
+            loss = loss_coord + lamda * loss_norm
+            return loss_coord.mean(), loss.mean(), scale, loss_norm.mean()
 
 
 def get_pose_net(cfg, is_train, joint_num):
