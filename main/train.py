@@ -32,7 +32,7 @@ def valid(trainer, valider, global_steps):
     preds = []
     trainer.model.eval()
     with torch.no_grad():
-        for itr, input_img in enumerate(tqdm(valider.batch_generator)):
+        for itr, (input_img, _, _) in enumerate(tqdm(valider.batch_generator)):
 
             # forward
             coord_out = trainer.model(input_img)

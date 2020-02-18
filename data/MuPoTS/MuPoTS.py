@@ -10,7 +10,7 @@ import random
 import math
 from utils.pose_utils import pixel2cam, process_bbox
 from utils.vis import vis_keypoints, vis_3d_skeleton
-
+import neptune
 class MuPoTS:
     def __init__(self, data_split):
         self.data_split = data_split
@@ -60,6 +60,7 @@ class MuPoTS:
                 joint_img[:,2] = joint_img[:,2] - root_cam[2]
                 joint_vis = np.ones((self.original_joint_num,1))
 
+                bbox = np.array(ann['bbox'])
                 img_width, img_height = img['width'], img['height']
                 bbox = process_bbox(bbox, img_width, img_height)
                 if bbox is None: continue
@@ -103,7 +104,7 @@ class MuPoTS:
 
         return data
 
-    def evaluate(self, preds, result_dir):
+    def evaluate(self, preds, result_dir, global_steps):
         
         print('Evaluation start...')
         gts = self.data
@@ -148,18 +149,23 @@ class MuPoTS:
                 cv2.imwrite(filename + '_output.jpg', tmpimg)
 
             # back project to camera coordinate system
-            pred_3d_kpt = np.zeros((joint_num,3)) = pixel2cam(pred_2d_kpt, f, c)
+            pred_3d_kpt = pixel2cam(pred_2d_kpt, f, c)
             
             # 3d kpt save
             if img_name in pred_3d_save:
                 pred_3d_save[img_name].append(pred_3d_kpt)
             else:
                 pred_3d_save[img_name] = [pred_3d_kpt]
-        
-        output_path = osp.join(result_dir,'preds_2d_kpt_mupots.mat')
+
+        neptune_step = 0
+        if global_steps:
+            neptune_step = global_steps['valid_global_steps']
+            global_steps['valid_global_steps'] = neptune_step + 1
+
+        output_path = osp.join(result_dir, str(neptune_step) + 'preds_2d_kpt_mupots.mat')
         sio.savemat(output_path, pred_2d_save)
         print("Testing result is saved at " + output_path)
-        output_path = osp.join(result_dir,'preds_3d_kpt_mupots.mat')
+        output_path = osp.join(result_dir, str(neptune_step) + 'preds_3d_kpt_mupots.mat')
         sio.savemat(output_path, pred_3d_save)
         print("Testing result is saved at " + output_path)
 

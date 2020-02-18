@@ -113,7 +113,7 @@ class DatasetLoader(Dataset):
             return img_patch, joint_img, joint_vis, joints_have_depth
         else:
             img_patch = self.transform(img_patch)
-            return img_patch
+            return img_patch, joint_img, joint_vis
 
     def __len__(self):
         return len(self.db)

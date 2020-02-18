@@ -8,7 +8,7 @@ from base import Tester
 from utils.vis import vis_keypoints
 from utils.pose_utils import flip
 import torch.backends.cudnn as cudnn
-
+import neptune
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--gpu', type=str, dest='gpu_ids')
@@ -44,8 +44,11 @@ def main():
 
     preds = []
 
+    neptune.init('hccccccccc/sandbox')
+    neptune.create_experiment(name='start-with-neptune')
+
     with torch.no_grad():
-        for itr, input_img in enumerate(tqdm(tester.batch_generator)):
+        for itr, (input_img, joint_img, joint_vis) in enumerate(tqdm(tester.batch_generator)):
             
             # forward
             coord_out = tester.model(input_img)
@@ -60,24 +63,35 @@ def main():
 
             vis = False
             if vis:
-                filename = str(itr)
-                tmpimg = input_img[0].cpu().numpy()
-                tmpimg = tmpimg * np.array(cfg.pixel_std).reshape(3,1,1) + np.array(cfg.pixel_mean).reshape(3,1,1)
-                tmpimg = tmpimg.astype(np.uint8)
-                tmpimg = tmpimg[::-1, :, :]
-                tmpimg = np.transpose(tmpimg,(1,2,0)).copy()
-                tmpkps = np.zeros((3,tester.joint_num))
-                tmpkps[:2,:] = coord_out[0,:,:2].cpu().numpy().transpose(1,0) / cfg.output_shape[0] * cfg.input_shape[0]
-                tmpkps[2,:] = 1
-                tmpimg = vis_keypoints(tmpimg, tmpkps, tester.skeleton)
-                cv2.imwrite(filename + '_output.jpg', tmpimg)
+                # filename = str(itr)
+                for idx in range(input_img.shape[0]):
+                    tmpimg = input_img[idx].cpu().numpy()
+                    tmpimg = tmpimg * np.array(cfg.pixel_std).reshape(3,1,1) + np.array(cfg.pixel_mean).reshape(3,1,1)
+                    tmpimg = tmpimg.astype(np.uint8)
+                    tmpimg = tmpimg[::-1, :, :]
+                    tmpimg = np.transpose(tmpimg,(1,2,0)).copy()
+                    tmpkps = np.zeros((3,tester.joint_num))
+                    tmpkps[:2,:] = coord_out[idx,:,:2].cpu().numpy().transpose(1,0) / cfg.output_shape[0] * cfg.input_shape[0]
+                    tmpkps[2,:] = 1
 
+                    tmpimg_gt = tmpimg.copy()
+                    tmpkps_gt = np.zeros((3, tester.joint_num))
+                    tmpkps_gt[:2, :] = joint_img[idx, :, :2].cpu().numpy().transpose(1, 0) / cfg.output_shape[0] * cfg.input_shape[0]
+                    tmpkps_gt[2, :] = joint_vis[idx].squeeze(-1)
+
+                    tmpimg = vis_keypoints(tmpimg, tmpkps, tester.skeleton)
+                    tmpimg_gt = vis_keypoints(tmpimg_gt, tmpkps_gt, tester.skeleton)
+
+                    neptune.log_image('mosaics', tmpimg)
+                    neptune.log_image('mosaics', tmpimg_gt)
+
+                    # cv2.imwrite(filename + '_output.jpg', tmpimg)
             coord_out = coord_out.cpu().numpy()
             preds.append(coord_out)
             
     # evaluate
     preds = np.concatenate(preds, axis=0)
     tester._evaluate(preds, cfg.result_dir)    
-
+    neptune.stop()
 if __name__ == "__main__":
     main()
