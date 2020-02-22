@@ -5,7 +5,6 @@ from base import Trainer, Tester
 import torch.backends.cudnn as cudnn
 import neptune
 from utils.pose_utils import flip
-from utils.gcn_utils import adj_mx_from_skeleton
 import numpy as np
 import cv2
 from tqdm import tqdm
@@ -29,18 +28,18 @@ def parse_args():
 
     return args
 
-def valid(trainer, valider, adj_mx, global_steps):
+def valid(trainer, valider, global_steps):
     preds = []
     trainer.model.eval()
     with torch.no_grad():
         for itr, (input_img, _, _) in enumerate(tqdm(valider.batch_generator)):
 
             # forward
-            coord_out = trainer.model(input_img, adj_mx.expand(input_img.shape[0], -1, -1))
+            coord_out = trainer.model(input_img)
 
             if cfg.flip_test:
                 flipped_input_img = flip(input_img, dims=3)
-                flipped_coord_out = trainer.model(flipped_input_img, adj_mx.expand(flipped_input_img.shape[0], -1, -1))
+                flipped_coord_out = trainer.model(flipped_input_img)
                 flipped_coord_out[:, :, 0] = cfg.output_shape[1] - flipped_coord_out[:, :, 0] - 1
                 for pair in valider.flip_pairs:
                     flipped_coord_out[:, pair[0], :], flipped_coord_out[:, pair[1], :] = flipped_coord_out[:,
@@ -82,9 +81,6 @@ def main():
             'train_global_steps': 0,
             'valid_global_steps': 0,
         }
-
-    # use skeleton construct graph
-    adj_mx = adj_mx_from_skeleton(trainer.joint_num, trainer.skeleton)
 
     # train
     for epoch in range(trainer.start_epoch, cfg.end_epoch):
@@ -130,7 +126,7 @@ def main():
             trainer.optimizer.zero_grad()
 
             # forward
-            loss_coord = trainer.model(input_img, adj_mx.expand(input_img.shape[0], -1, -1), target)
+            loss_coord = trainer.model(input_img, target)
             loss_coord = loss_coord.mean()
 
             # backward
@@ -163,7 +159,7 @@ def main():
             'optimizer': trainer.optimizer.state_dict(),
         }, epoch)
 
-        valid(trainer, valider, adj_mx, global_steps)
+        valid(trainer, valider, global_steps)
     neptune.stop()
 if __name__ == "__main__":
     main()

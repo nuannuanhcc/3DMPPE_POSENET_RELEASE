@@ -14,7 +14,7 @@ from timer import Timer
 from logger import colorlogger
 from torch.nn.parallel.data_parallel import DataParallel
 from model import get_pose_net
-
+from utils.gcn_utils import adj_mx_from_skeleton
 # dynamic dataset import
 for i in range(len(cfg.trainset)):
     exec('from ' + cfg.trainset[i] + ' import ' + cfg.trainset[i])
@@ -108,11 +108,12 @@ class Trainer(Base):
         self.itr_per_epoch = math.ceil(trainset_loader[0].__len__() / cfg.num_gpus / (cfg.batch_size // len(cfg.trainset)))
         self.batch_generator = batch_generator
         self.iterator = iterator
-    
+        # use skeleton construct graph
+        self.adj_mx = adj_mx_from_skeleton(self.joint_num, self.skeleton)
     def _make_model(self):
         # prepare network
         self.logger.info("Creating graph and optimizer...")
-        model = get_pose_net(cfg, True, self.joint_num)
+        model = get_pose_net(cfg, True, self.joint_num, self.adj_mx)
         model = DataParallel(model).cuda()
         optimizer = self.get_optimizer(model)
         if cfg.continue_train:
@@ -146,7 +147,8 @@ class Tester(Base):
         self.skeleton = testset_loader.skeleton
         self.flip_pairs = testset.flip_pairs
         self.batch_generator = batch_generator
-    
+        self.adj_mx = adj_mx_from_skeleton(self.joint_num, self.skeleton)
+
     def _make_model(self):
         
         model_path = os.path.join(cfg.model_dir, 'snapshot_%d.pth.tar' % self.test_epoch)
@@ -155,7 +157,7 @@ class Tester(Base):
         
         # prepare network
         self.logger.info("Creating graph...")
-        model = get_pose_net(cfg, False, self.joint_num)
+        model = get_pose_net(cfg, False, self.joint_num, self.adj_mx)
         model = DataParallel(model).cuda()
         ckpt = torch.load(model_path)
         model.load_state_dict(ckpt['network'])

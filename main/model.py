@@ -119,17 +119,18 @@ class GraphConvolution(nn.Module):
 
 
 class GCN(nn.Module):
-    def __init__(self, nfeat, nhid, nclass, dropout=0.5):
+    def __init__(self, adj, nfeat, nhid, nclass, dropout=0.5):
         super(GCN, self).__init__()
-
+        self.adj = adj
         self.gc1 = GraphConvolution(nfeat, nhid)
         self.gc2 = GraphConvolution(nhid, nclass)
         self.dropout = dropout
 
-    def forward(self, x, adj):
-        x = F.relu(self.gc1(x, adj))
+    def forward(self, x):
+        self.adj = self.adj.to(x.device)
+        x = F.relu(self.gc1(x, self.adj))
         x = F.dropout(x, self.dropout, training=self.training)
-        x = self.gc2(x, adj)
+        x = self.gc2(x, self.adj)
         return x
 
 
@@ -141,7 +142,7 @@ class ResPoseNet(nn.Module):
         self.gcn = gcn
         self.joint_num = joint_num
 
-    def forward(self, input_img, adj_mx, target=None): # [32, 3, 256, 256]
+    def forward(self, input_img, target=None): # [32, 3, 256, 256]
 
         fm = self.backbone(input_img) # [32, 2048, 8, 8]
         hm = self.head(fm) # [32, 1152, 64, 64]
@@ -149,7 +150,7 @@ class ResPoseNet(nn.Module):
 
         # if adj_mx:
 
-        coord1 = self.gcn(coord, adj_mx)
+        coord1 = self.gcn(coord)
         if target is None:
             return coord1
         else:
@@ -165,10 +166,10 @@ class ResPoseNet(nn.Module):
             loss_coord1 = (loss_coord1[:,:,0] + loss_coord1[:,:,1] + loss_coord1[:,:,2] * target_have_depth)/3.
             return loss_coord + loss_coord1
 
-def get_pose_net(cfg, is_train, joint_num):
+def get_pose_net(cfg, is_train, joint_num, adj):
     backbone = ResNetBackbone(cfg.resnet_type)
     head_net = HeadNet(joint_num)
-    gcn = GCN(3, 128, 3)
+    gcn = GCN(adj, nfeat=3, nhid=128, nclass=3)
     if is_train:
         backbone.init_weights()
         head_net.init_weights()
