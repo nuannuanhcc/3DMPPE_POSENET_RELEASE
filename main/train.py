@@ -137,7 +137,6 @@ def main():
             loss = loss_coord
             loss.backward()
             trainer.optimizer.step()
-            valid(trainer, valider, adj_mx, global_steps)
             trainer.gpu_timer.toc()
             screen = [
                 'Epoch %d/%d itr %d/%d:' % (epoch, cfg.end_epoch, itr, trainer.itr_per_epoch),
@@ -164,7 +163,7 @@ def main():
             'optimizer': trainer.optimizer.state_dict(),
         }, epoch)
 
-        valid(trainer, valider, global_steps)
+        valid(trainer, valider, adj_mx, global_steps)
     neptune.stop()
 if __name__ == "__main__":
     main()
