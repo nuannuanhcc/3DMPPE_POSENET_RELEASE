@@ -104,6 +104,7 @@ class Trainer(Base):
             iterator.append(iter(batch_generator[-1]))
         
         self.joint_num = trainset_loader[0].joint_num
+        self.skeleton = trainset_loader[0].skeleton
         self.itr_per_epoch = math.ceil(trainset_loader[0].__len__() / cfg.num_gpus / (cfg.batch_size // len(cfg.trainset)))
         self.batch_generator = batch_generator
         self.iterator = iterator

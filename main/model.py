@@ -3,6 +3,8 @@ import torch.nn as nn
 from torch.nn import functional as F
 from nets.resnet import ResNetBackbone
 from config import cfg
+import math
+from torch.nn.parameter import Parameter
 
 class HeadNet(nn.Module):
 
@@ -79,20 +81,77 @@ def soft_argmax(heatmaps, joint_num): # [32, 1152, 64, 64]
 
     return coord_out
 
+class GraphConvolution(nn.Module):
+    """
+    Simple GCN layer, similar to https://arxiv.org/abs/1609.02907
+    """
+
+    def __init__(self, in_features, out_features, bias=True):
+        super(GraphConvolution, self).__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        self.weight = Parameter(torch.FloatTensor(in_features, out_features))
+        if bias:
+            self.bias = Parameter(torch.FloatTensor(out_features))
+        else:
+            self.register_parameter('bias', None)
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        stdv = 1. / math.sqrt(self.weight.size(1))
+        self.weight.data.uniform_(-stdv, stdv)
+        if self.bias is not None:
+            self.bias.data.uniform_(-stdv, stdv)
+
+    def forward(self, input, adj):
+
+        support = torch.matmul(input, self.weight)
+        output = torch.matmul(adj, support)
+        if self.bias is not None:
+            return output + self.bias
+        else:
+            return output
+
+    def __repr__(self):
+        return self.__class__.__name__ + ' (' \
+               + str(self.in_features) + ' -> ' \
+               + str(self.out_features) + ')'
+
+
+class GCN(nn.Module):
+    def __init__(self, nfeat, nhid, nclass, dropout=0.5):
+        super(GCN, self).__init__()
+
+        self.gc1 = GraphConvolution(nfeat, nhid)
+        self.gc2 = GraphConvolution(nhid, nclass)
+        self.dropout = dropout
+
+    def forward(self, x, adj):
+        x = F.relu(self.gc1(x, adj))
+        x = F.dropout(x, self.dropout, training=self.training)
+        x = self.gc2(x, adj)
+        return x
+
+
 class ResPoseNet(nn.Module):
-    def __init__(self, backbone, head, joint_num):
+    def __init__(self, backbone, head, gcn, joint_num):
         super(ResPoseNet, self).__init__()
         self.backbone = backbone
         self.head = head
+        self.gcn = gcn
         self.joint_num = joint_num
 
-    def forward(self, input_img, target=None): # [32, 3, 256, 256]
+    def forward(self, input_img, adj_mx, target=None): # [32, 3, 256, 256]
+
         fm = self.backbone(input_img) # [32, 2048, 8, 8]
         hm = self.head(fm) # [32, 1152, 64, 64]
         coord = soft_argmax(hm, self.joint_num)
 
+        # if adj_mx:
+
+        coord1 = self.gcn(coord, adj_mx)
         if target is None:
-            return coord
+            return coord1
         else:
             target_coord = target['coord']
             target_vis = target['vis']
@@ -101,17 +160,19 @@ class ResPoseNet(nn.Module):
             ## coordinate loss
             loss_coord = torch.abs(coord - target_coord) * target_vis
             loss_coord = (loss_coord[:,:,0] + loss_coord[:,:,1] + loss_coord[:,:,2] * target_have_depth)/3.
-            
-            return loss_coord
+
+            loss_coord1 = torch.abs(coord1 - target_coord) * target_vis
+            loss_coord1 = (loss_coord1[:,:,0] + loss_coord1[:,:,1] + loss_coord1[:,:,2] * target_have_depth)/3.
+            return loss_coord + loss_coord1
 
 def get_pose_net(cfg, is_train, joint_num):
-    
     backbone = ResNetBackbone(cfg.resnet_type)
     head_net = HeadNet(joint_num)
+    gcn = GCN(3, 128, 3)
     if is_train:
         backbone.init_weights()
         head_net.init_weights()
-
-    model = ResPoseNet(backbone, head_net, joint_num)
+        # gcn.init_weights()
+    model = ResPoseNet(backbone, head_net, gcn, joint_num)
     return model
 
