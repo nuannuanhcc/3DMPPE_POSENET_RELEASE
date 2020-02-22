@@ -5,7 +5,7 @@ from nets.resnet import ResNetBackbone
 from config import cfg
 import math
 from torch.nn.parameter import Parameter
-
+from nets.sem_gcn import SemGCN
 class HeadNet(nn.Module):
 
     def __init__(self, joint_num):
@@ -169,7 +169,8 @@ class ResPoseNet(nn.Module):
 def get_pose_net(cfg, is_train, joint_num, adj):
     backbone = ResNetBackbone(cfg.resnet_type)
     head_net = HeadNet(joint_num)
-    gcn = GCN(adj, nfeat=3, nhid=128, nclass=3)
+    # gcn = GCN(adj, nfeat=3, nhid=128, nclass=3)
+    gcn = SemGCN(adj, hid_dim=128, num_layers=1, p_dropout=0.5)
     if is_train:
         backbone.init_weights()
         head_net.init_weights()
