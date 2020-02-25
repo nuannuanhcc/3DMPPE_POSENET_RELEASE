@@ -149,8 +149,8 @@ class ResPoseNet(nn.Module):
         coord = soft_argmax(hm, self.joint_num)
 
         # if adj_mx:
-
-        coord1 = self.gcn(coord)
+        hm = hm.view(*hm.shape[:1], self.joint_num, -1)
+        coord1 = self.gcn(hm)
         if target is None:
             return coord1
         else:
