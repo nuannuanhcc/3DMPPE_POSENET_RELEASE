@@ -149,7 +149,8 @@ class ResPoseNet(nn.Module):
         coord = soft_argmax(hm, self.joint_num)
 
         # if adj_mx:
-        hm = hm.view(*hm.shape[:1], self.joint_num, -1)
+        hm = hm.view(*hm.shape[:1], self.joint_num, -1) # [32, 18, n]
+        hm = torch.cat((hm, coord), dim=-1)
         coord1 = self.gcn(hm)
         if target is None:
             return coord1

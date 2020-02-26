@@ -106,7 +106,7 @@ class SemGCN(nn.Module):
     def __init__(self, adj, hid_dim, coords_dim=(2, 3), num_layers=4, nodes_group=None, p_dropout=None):
         super(SemGCN, self).__init__()
 
-        _gconv_input = [_GraphConv(adj, 64*64*64, hid_dim, p_dropout=p_dropout)]
+        _gconv_input = [_GraphConv(adj, 64*64*64+3, hid_dim, p_dropout=p_dropout)]
         _gconv_layers = []
 
         if nodes_group is None:
