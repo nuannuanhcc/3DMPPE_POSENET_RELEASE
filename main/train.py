@@ -82,6 +82,7 @@ def main():
             'valid_global_steps': 0,
         }
 
+
     # train
     for epoch in range(trainer.start_epoch, cfg.end_epoch):
         trainer.model.train()
@@ -124,7 +125,7 @@ def main():
             trainer.gpu_timer.tic()
 
             trainer.optimizer.zero_grad()
-
+            
             # forward
             loss_coord = trainer.model(input_img, target)
             loss_coord = loss_coord.mean()
@@ -133,6 +134,7 @@ def main():
             loss = loss_coord
             loss.backward()
             trainer.optimizer.step()
+            
             trainer.gpu_timer.toc()
             screen = [
                 'Epoch %d/%d itr %d/%d:' % (epoch, cfg.end_epoch, itr, trainer.itr_per_epoch),
