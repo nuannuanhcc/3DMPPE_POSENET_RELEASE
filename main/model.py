@@ -3,6 +3,8 @@ import torch.nn as nn
 from torch.nn import functional as F
 from nets.resnet import ResNetBackbone
 from config import cfg
+from nets.sem_gcn import SemGCN
+from utils.gcn_utils import adj_mx_from_skeleton
 
 
 class HeadNet(nn.Module):
@@ -114,6 +116,18 @@ class ResPoseNet(nn.Module):
         nn.init.constant_(self.log_var_head.fc.weight, 0)
         nn.init.constant_(self.log_var_head.fc.bias, 0)
 
+        self.USE_GCN = True
+        if self.USE_GCN:
+            if 'Human36M' in cfg.trainset:
+                self.skeleton = ((0, 7), (7, 8), (8, 9), (9, 10), (8, 11), (11, 12), (12, 13), (8, 14), (14, 15),
+                                 (15, 16), (0, 1), (1, 2), (2, 3), (0, 4), (4, 5), (5, 6))
+
+            if 'MuCo' in cfg.trainset:
+                self.skeleton = ((1, 2), (0, 1), (0, 2), (2, 4), (1, 3), (6, 8), (8, 10), (5, 7), (7, 9), (12, 14),
+                                 (14, 16), (11, 13), (13, 15), (5, 6), (11, 12))
+            self.gcn = SemGCN(adj_mx_from_skeleton(self.joint_num, self.skeleton),
+                              hid_dim=128, num_layers=1, p_dropout=0.5)
+
     def forward(self, input_img, target=None, s_max=10, s_min=1, thresh=2, lamda=0.1):  # [32, 3, 256, 256]
         fm = self.backbone(input_img)  # [32, 2048, 8, 8]
 
@@ -126,7 +140,13 @@ class ResPoseNet(nn.Module):
         hm = self.head(fm)  # [32, 1152, 64, 64]
         coord = soft_argmax(hm, self.joint_num, scale)
         if target is None:
-            return coord
+            if self.USE_GCN:
+                hmm = hm.view(*hm.shape[:1], self.joint_num, -1)
+                hmm = torch.cat((hmm, coord), dim=-1)
+                coord1 = self.gcn(hmm)
+                return coord1
+            else:
+                return coord
         else:
             target_coord = target['coord']
             target_vis = target['vis']
@@ -149,6 +169,16 @@ class ResPoseNet(nn.Module):
             loss_coord = torch.abs(coord - target_coord) * target_vis
             loss_coord = (loss_coord[:, :, 0] + loss_coord[:, :, 1] + loss_coord[:, :, 2] * target_have_depth) / 3.
             loss = loss_coord + lamda * loss_norm
+
+            if self.USE_GCN:
+                hmm = hm.view(*hm.shape[:1], self.joint_num, -1)
+                hmm = torch.cat((hmm, coord), dim=-1)
+                coord1 = self.gcn(hmm)
+                loss_coord1 = torch.abs(coord1 - target_coord) * target_vis
+                loss_coord1 = (loss_coord1[:, :, 0] + loss_coord1[:, :, 1] + loss_coord1[:, :,
+                                                                             2] * target_have_depth) / 3.
+                loss += loss_coord1
+                loss_coord += loss_coord1
             return loss_coord.mean(), loss.mean(), scale, loss_norm.mean()
 
 
