@@ -102,12 +102,24 @@ class ResPoseNet(nn.Module):
 
     def forward(self, input_img, target=None): # [32, 3, 256, 256]
         fm = self.backbone(input_img) # [32, 2048, 8, 8]
-        hm = self.head(fm) # [32, 1152, 64, 64]
+        hm = self.head(fm[-1]) # [32, 1152, 64, 64]
         coord = soft_argmax(hm, self.joint_num)
+
+        if self.USE_GCN:
+            n, k, _ = coord.shape
+            coord_norm = torch.empty(n, k, 2).cuda()
+            coord_norm[:, :, 0] = coord[:, :, 0] / cfg.output_shape[1] * 2 - 1
+            coord_norm[:, :, 1] = coord[:, :, 1] / cfg.output_shape[0] * 2 - 1
+            coord_norm = coord_norm.view(n, k, 1, 2)
+            feat = []
+            for f in fm:
+                feat.append(torch.nn.functional.grid_sample(f, coord_norm))
+            feat = torch.cat(feat, dim=1)  # [n, 3840, 18, 1]
+            feat = feat.view(n, k, -1)  # [n, 18, 3840]
 
         if target is None:
             if self.USE_GCN:
-                coord1 = self.gcn(coord)
+                coord1 = self.gcn(torch.cat((feat, coord), dim=-1))
                 return coord1
             else:
                 return coord
@@ -120,7 +132,7 @@ class ResPoseNet(nn.Module):
             loss_coord = torch.abs(coord - target_coord) * target_vis
             loss_coord = (loss_coord[:,:,0] + loss_coord[:,:,1] + loss_coord[:,:,2] * target_have_depth)/3.
             if self.USE_GCN:
-                coord1 = self.gcn(coord)
+                coord1 = self.gcn(torch.cat((feat, coord), dim=-1))
                 loss_coord1 = torch.abs(coord1 - target_coord) * target_vis
                 loss_coord1 = (loss_coord1[:, :, 0] + loss_coord1[:, :, 1] + loss_coord1[:, :, 2] * target_have_depth) / 3.
                 loss_coord += loss_coord1
