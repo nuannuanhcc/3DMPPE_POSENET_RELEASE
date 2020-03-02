@@ -3,6 +3,8 @@ import torch.nn as nn
 from torch.nn import functional as F
 from nets.resnet import ResNetBackbone
 from config import cfg
+from nets.sem_gcn import SemGCN
+from utils.gcn_utils import adj_mx_from_skeleton
 
 class HeadNet(nn.Module):
 
@@ -86,6 +88,18 @@ class ResPoseNet(nn.Module):
         self.head = head
         self.joint_num = joint_num
 
+        self.USE_GCN = cfg.use_gcn
+        if self.USE_GCN:
+            if 'Human36M' in cfg.trainset:
+                self.skeleton = ((0, 7), (7, 8), (8, 9), (9, 10), (8, 11), (11, 12), (12, 13), (8, 14), (14, 15),
+                                 (15, 16), (0, 1), (1, 2), (2, 3), (0, 4), (4, 5), (5, 6))
+
+            if 'MuCo' in cfg.trainset:
+                self.skeleton = ((1, 2), (0, 1), (0, 2), (2, 4), (1, 3), (6, 8), (8, 10), (5, 7), (7, 9), (12, 14),
+                                 (14, 16), (11, 13), (13, 15), (5, 6), (11, 12))
+            self.gcn = SemGCN(adj_mx_from_skeleton(self.joint_num, self.skeleton),
+                              hid_dim=128, num_layers=4, p_dropout=0.5)
+
         self.log_var_head = nn.Sequential()
         self.log_var_head.add_module('gap', nn.AdaptiveAvgPool2d((1, 1)))
         self.log_var_head.add_module('bottle_neck',
@@ -108,16 +122,32 @@ class ResPoseNet(nn.Module):
 
     def forward(self, input_img, target=None): # [32, 3, 256, 256]
         fm = self.backbone(input_img) # [32, 2048, 8, 8]
-        hm = self.head(fm) # [32, 1152, 64, 64]
+        hm = self.head(fm[-1]) # [32, 1152, 64, 64]
         coord = soft_argmax(hm, self.joint_num)
 
-        x = self.log_var_head.gap(fm)
+        x = self.log_var_head.gap(fm[-1])
         x = x.view(*x.shape[:2])
         x = self.log_var_head.bottle_neck(x)
         log_var = self.log_var_head.fc(x)
 
+        if self.USE_GCN:
+            n, k, _ = coord.shape
+            coord_norm = torch.empty(n, k, 2).cuda()
+            coord_norm[:, :, 0] = coord[:, :, 0] / cfg.output_shape[1] * 2 - 1
+            coord_norm[:, :, 1] = coord[:, :, 1] / cfg.output_shape[0] * 2 - 1
+            coord_norm = coord_norm.view(n, k, 1, 2)
+            feat = []
+            for f in fm:
+                feat.append(torch.nn.functional.grid_sample(f, coord_norm))
+            feat = torch.cat(feat, dim=1)  # [n, 3840, 18, 1]
+            feat = feat.view(n, k, -1)  # [n, 18, 3840]
+
         if target is None:
-            return coord
+            if self.USE_GCN:
+                coord1 = self.gcn(torch.cat((feat, coord), dim=-1))
+                return coord1
+            else:
+                return coord
         else:
             target_coord = target['coord']
             target_vis = target['vis']
@@ -129,6 +159,12 @@ class ResPoseNet(nn.Module):
             log_var = log_var * target_vis.squeeze(-1)
             L1_loss = loss_coord
             loss_all = torch.exp(-log_var) * L1_loss + log_var
+
+            if self.USE_GCN:
+                coord1 = self.gcn(torch.cat((feat, coord), dim=-1))
+                loss_coord1 = torch.abs(coord1 - target_coord) * target_vis
+                loss_coord1 = (loss_coord1[:, :, 0] + loss_coord1[:, :, 1] + loss_coord1[:, :, 2] * target_have_depth) / 3.
+                loss_all += loss_coord1
             return loss_coord, loss_all, log_var
 
 def get_pose_net(cfg, is_train, joint_num):

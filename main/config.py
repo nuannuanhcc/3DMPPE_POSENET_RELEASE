@@ -4,7 +4,7 @@ import sys
 import numpy as np
 
 class Config:
-    
+    use_gcn = True
     ## dataset
     # training set
     # 3D: Human36M, MuCo

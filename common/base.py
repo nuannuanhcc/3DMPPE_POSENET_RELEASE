@@ -52,6 +52,21 @@ class Base(object):
         model_file_list = glob.glob(osp.join(cfg.model_dir,'*.pth.tar'))
         cur_epoch = max([int(file_name[file_name.find('snapshot_') + 9 : file_name.find('.pth.tar')]) for file_name in model_file_list])
         ckpt = torch.load(osp.join(cfg.model_dir, 'snapshot_' + str(cur_epoch) + '.pth.tar')) 
+        fix_pose = False
+        if fix_pose:
+            print('loading checkpoint from...', model_file_list)
+            model.load_state_dict(ckpt['network'], strict=False)
+            for param in model.module.backbone.parameters():
+                param.requires_grad = False
+            for param in model.module.head.parameters():
+                param.requires_grad = False
+            optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, model.module.parameters()), lr=cfg.lr)
+            return 1, model, optimizer
+        pre_train = False
+        if pre_train:
+            print('loading checkpoint from...', model_file_list)
+            model.load_state_dict(ckpt['network'], strict=False)
+            return 1, model, optimizer
         start_epoch = ckpt['epoch'] + 1
         model.load_state_dict(ckpt['network'])
         optimizer.load_state_dict(ckpt['optimizer'])
