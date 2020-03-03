@@ -8,6 +8,7 @@ from utils.pose_utils import flip
 import numpy as np
 import cv2
 from tqdm import tqdm
+import random
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -57,6 +58,12 @@ def valid(trainer, valider, global_steps):
     valider._evaluate(preds, cfg.result_dir, global_steps)
 
 def main():
+    seed = 1
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed + 1)
+    random.seed(seed + 2)
+    np.random.seed(seed + 3)
+    cudnn.deterministic = True
     
     # argument parse and create log
     args = parse_args()

@@ -31,16 +31,21 @@ class SemGraphConv(nn.Module):
         else:
             self.register_parameter('bias', None)
 
-    def forward(self, input):
+    def forward(self, x):
+        input = x[0]
+        scale = x[1]  # n*k
         h0 = torch.matmul(input, self.W[0])
         h1 = torch.matmul(input, self.W[1])
 
+        adj_scale = scale.unsqueeze(1).expand(-1, scale.shape[-1], -1)  # n*k*k
         adj = -9e15 * torch.ones_like(self.adj).to(input.device)
         adj[self.m] = self.e
-        adj = F.softmax(adj, dim=1)
+
+        adj_all = adj_scale * adj
+        adj_all = F.softmax(adj_all, dim=-1)
 
         M = torch.eye(adj.size(0), dtype=torch.float).to(input.device)
-        output = torch.matmul(adj * M, h0) + torch.matmul(adj * (1 - M), h1)
+        output = torch.matmul(adj_all * M, h0) + torch.matmul(adj_all * (1 - M), h1)
 
         if self.bias is not None:
             return output + self.bias.view(1, 1, -1)
@@ -81,10 +86,10 @@ class _ResGraphConv(nn.Module):
         self.gconv2 = _GraphConv(adj, hid_dim, output_dim, p_dropout)
 
     def forward(self, x):
-        residual = x
+        residual = x[0]
         out = self.gconv1(x)
-        out = self.gconv2(out)
-        return residual + out
+        out = self.gconv2([out, x[1]])
+        return [residual + out, x[1]]
 
 
 class _GraphNonLocal(nn.Module):
@@ -133,8 +138,8 @@ class SemGCN(nn.Module):
         self.gconv_layers = nn.Sequential(*_gconv_layers)
         self.gconv_output = SemGraphConv(hid_dim, coords_dim[1], adj)
 
-    def forward(self, x):
-        out = self.gconv_input(x)
-        out = self.gconv_layers(out)
+    def forward(self, x, scale):
+        out = self.gconv_input([x, scale])
+        out = self.gconv_layers([out, scale])
         out = self.gconv_output(out)
         return out

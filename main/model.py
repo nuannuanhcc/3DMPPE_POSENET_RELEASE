@@ -154,7 +154,7 @@ class ResPoseNet(nn.Module):
 
         if target is None:
             if self.USE_GCN:
-                coord1 = self.gcn(torch.cat((feat, coord), dim=-1))
+                coord1 = self.gcn(torch.cat((feat, coord), dim=-1), scale)
                 return coord1
             else:
                 return coord
@@ -182,7 +182,7 @@ class ResPoseNet(nn.Module):
             loss = loss_coord + lamda * loss_norm
 
             if self.USE_GCN:
-                coord1 = self.gcn(torch.cat((feat, coord), dim=-1))
+                coord1 = self.gcn(torch.cat((feat, coord), dim=-1), scale)
 
                 loss_coord1 = torch.abs(coord1 - target_coord) * target_vis
                 loss_coord1 = (loss_coord1[:, :, 0] + loss_coord1[:, :, 1] + loss_coord1[:, :,
