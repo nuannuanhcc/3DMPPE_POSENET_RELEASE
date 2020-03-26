@@ -4,7 +4,9 @@ import sys
 import numpy as np
 
 class Config:
-    use_gcn = True
+    use_gcn = False
+    s_max = 12
+    s_min = 2
     ## dataset
     # training set
     # 3D: Human36M, MuCo
@@ -51,7 +53,7 @@ class Config:
     use_gt_info = True
 
     ## others
-    num_thread = 20
+    num_thread = 8
     gpu_ids = '0'
     num_gpus = 1
     continue_train = False

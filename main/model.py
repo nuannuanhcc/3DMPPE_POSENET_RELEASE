@@ -128,7 +128,8 @@ class ResPoseNet(nn.Module):
             self.gcn = SemGCN(adj_mx_from_skeleton(self.joint_num, self.skeleton),
                               hid_dim=128, num_layers=4, p_dropout=0.5)
 
-    def forward(self, input_img, target=None, s_max=10, s_min=1, thresh=2, lamda=0.1):  # [32, 3, 256, 256]
+    def forward(self, input_img, target=None, s_max=cfg.s_max, s_min=cfg.s_min, thresh=2, lamda=0.1):  # [32, 3, 256, 256]
+        print(s_max,s_min)
         fm = self.backbone(input_img)  # [32, 2048, 8, 8]
 
         x = self.log_var_head.gap(fm[-1])
